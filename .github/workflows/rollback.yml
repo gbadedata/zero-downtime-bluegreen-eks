@@ -1,0 +1,41 @@
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Environment to roll back to (blue or green)"
+        required: true
+        default: "blue"
+        type: choice
+        options: [blue, green]
+
+env:
+  AWS_REGION:   us-east-1
+  CLUSTER_NAME: bluegreen-cluster
+
+jobs:
+  rollback:
+    name: Rollback to ${{ github.event.inputs.target }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Connect kubectl to EKS
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name   ${{ env.CLUSTER_NAME }}
+
+      - name: Switch traffic back
+        run: |
+          TARGET="${{ github.event.inputs.target }}"
+          kubectl patch service bluegreen-service \
+            -p "{\"spec\":{\"selector\":{\"app\":\"bluegreen-app\",\"version\":\"${TARGET}\"}}}"
+          echo "Rolled back to: ${TARGET}"

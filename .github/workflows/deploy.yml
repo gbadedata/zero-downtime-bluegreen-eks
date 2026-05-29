@@ -1,0 +1,85 @@
+name: Blue-Green Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+env:
+  AWS_REGION:   us-east-1
+  ECR_REGISTRY: 677276115158.dkr.ecr.us-east-1.amazonaws.com
+  ECR_REPO:     bluegreen-app
+  CLUSTER_NAME: bluegreen-cluster
+
+jobs:
+  deploy:
+    name: Build, Push, Deploy, Switch
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Connect kubectl to EKS
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name   ${{ env.CLUSTER_NAME }}
+
+      - name: Detect idle environment
+        id: env
+        run: |
+          LIVE=$(kubectl get service bluegreen-service \
+            -o jsonpath='{.spec.selector.version}' 2>/dev/null || echo "blue")
+          if [ "$LIVE" = "blue" ]; then
+            IDLE="green"
+          else
+            IDLE="blue"
+          fi
+          echo "live=$LIVE" >> $GITHUB_OUTPUT
+          echo "idle=$IDLE" >> $GITHUB_OUTPUT
+          echo "Live: $LIVE -- Deploying to: $IDLE"
+
+      - name: Build and push image to ECR
+        env:
+          IDLE: ${{ steps.env.outputs.idle }}
+        run: |
+          IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:${IDLE}"
+          docker build -t "$IMAGE" ./app
+          docker push  "$IMAGE"
+
+      - name: Deploy to idle environment
+        env:
+          IDLE: ${{ steps.env.outputs.idle }}
+        run: |
+          kubectl apply -f k8s/deployment-${IDLE}.yaml
+          kubectl set image deployment/bluegreen-${IDLE} \
+            bluegreen-app=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:${IDLE}
+          kubectl rollout status deployment/bluegreen-${IDLE} --timeout=120s
+
+      - name: Health check idle pods
+        env:
+          IDLE: ${{ steps.env.outputs.idle }}
+        run: |
+          POD=$(kubectl get pods -l version=${IDLE} \
+            -o jsonpath='{.items[0].metadata.name}')
+          kubectl exec "$POD" -- \
+            wget -qO- http://localhost:3000/health | grep '"status":"healthy"'
+
+      - name: Switch traffic
+        env:
+          IDLE: ${{ steps.env.outputs.idle }}
+        run: |
+          kubectl patch service bluegreen-service \
+            -p "{\"spec\":{\"selector\":{\"app\":\"bluegreen-app\",\"version\":\"${IDLE}\"}}}"
+          echo "Traffic is now live on: ${IDLE}"
