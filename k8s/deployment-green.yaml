@@ -20,6 +20,8 @@ spec:
       containers:
         - name: bluegreen-app
           image: 677276115158.dkr.ecr.us-east-1.amazonaws.com/bluegreen-app:green
+          imagePullPolicy: Always
+          imagePullPolicy: Always
           ports:
             - containerPort: 3000
           env:

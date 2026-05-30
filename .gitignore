@@ -1,0 +1,12 @@
+# Terraform state files
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/*.tfstate.*.backup
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+
+# Windows zone identifier files
+*.Identifier
+
+# Node modules
+app/node_modules/
