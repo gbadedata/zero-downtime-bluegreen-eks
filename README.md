@@ -33,7 +33,7 @@
 
 ---
 
-## What This Project Does
+## What this Project Does
 
 Traditional deployments take the application offline while new code rolls out. Users experience errors, sessions break, and rollback means a second full redeploy with more downtime.
 
@@ -161,7 +161,7 @@ The public URL never changes. The NGINX Ingress forwards to the Service. The Ser
 
 ---
 
-## How It Works
+## How it Works
 
 ### The Traffic Switch
 
