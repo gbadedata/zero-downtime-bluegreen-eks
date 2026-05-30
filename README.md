@@ -541,11 +541,4 @@ The EKS control plane costs approximately $0.10 per hour. Always tear down after
 - Apply security best practices including non-root containers, resource limits, and scoped IAM policies
 
 ---
-
-## Author
-
-**Gbade** [@gbadedata](https://github.com/gbadedata)
-
-Built as a solo capstone project for TechCrush, demonstrating production-grade DevOps practices on AWS EKS from scratch on Ubuntu.
-
 `Docker` `Kubernetes` `GitHub Actions` `AWS EKS` `Terraform` `Prometheus` `Grafana` `NGINX` `Node.js`
