@@ -1,15 +1,15 @@
 # Zero-Downtime Blue-Green Deployment on AWS EKS
 
 [![Blue-Green Deploy](https://img.shields.io/github/actions/workflow/status/gbadedata/zero-downtime-bluegreen-eks/deploy.yml?label=Blue-Green%20Deploy&logo=github-actions&logoColor=white)](https://github.com/gbadedata/zero-downtime-bluegreen-eks/actions)
-[![Kubernetes](https://img.shields.io/badge/Kubernetes-EKS-326CE5?logo=kubernetes&logoColor=white)](https://aws.amazon.com/eks/)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-EKS%201.31-326CE5?logo=kubernetes&logoColor=white)](https://aws.amazon.com/eks/)
 [![Docker](https://img.shields.io/badge/Docker-Container-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![AWS](https://img.shields.io/badge/AWS-EKS%20%7C%20ECR-FF9900?logo=amazon-aws&logoColor=white)](https://aws.amazon.com/)
+[![Terraform](https://img.shields.io/badge/Terraform-Infrastructure-7B42BC?logo=terraform&logoColor=white)](https://www.terraform.io/)
+[![Prometheus](https://img.shields.io/badge/Prometheus-Metrics-E6522C?logo=prometheus&logoColor=white)](https://prometheus.io/)
+[![Grafana](https://img.shields.io/badge/Grafana-Dashboards-F46800?logo=grafana&logoColor=white)](https://grafana.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-> A production-grade blue-green deployment pipeline that delivers **zero-downtime releases** and **sub-5-second rollback** on Amazon Elastic Kubernetes Service. Two identical environments run simultaneously at all times. New versions are staged, health-checked, and switched over in a single automated pipeline run averaging **29 seconds end to end**.
-
-![Blue Environment](docs/screenshots/blue.jpg)
-![Green Environment](docs/screenshots/green.jpg)
+> A production-grade blue-green deployment pipeline on Amazon EKS with zero-downtime releases, sub-5-second rollback, real-time Prometheus metrics, Grafana dashboards, and Terraform-managed infrastructure. Built and deployed from scratch on Ubuntu.
 
 ---
 
@@ -22,31 +22,33 @@
 5. [Project Structure](#project-structure)
 6. [How It Works](#how-it-works)
 7. [Prerequisites](#prerequisites)
-8. [One-Time AWS Setup](#one-time-aws-setup)
+8. [Infrastructure Setup with Terraform](#infrastructure-setup-with-terraform)
 9. [Initial Deployment](#initial-deployment)
-10. [CI/CD Pipeline](#cicd-pipeline)
-11. [Proving Zero Downtime](#proving-zero-downtime)
-12. [Rollback](#rollback)
-13. [Challenges and Solutions](#challenges-and-solutions)
-14. [GitHub Secrets Reference](#github-secrets-reference)
-15. [Tear Down](#tear-down)
+10. [Prometheus and Grafana Monitoring](#prometheus-and-grafana-monitoring)
+11. [CI/CD Pipeline](#cicd-pipeline)
+12. [Proving Zero Downtime](#proving-zero-downtime)
+13. [Rollback](#rollback)
+14. [Challenges and Solutions](#challenges-and-solutions)
+15. [GitHub Secrets Reference](#github-secrets-reference)
+16. [Tear Down](#tear-down)
 
 ---
 
-## What this Project Does
+## What This Project Does
 
 Traditional deployments take the application offline while new code rolls out. Users experience errors, sessions break, and rollback means a second full redeploy with more downtime.
 
 Blue-green deployment solves this permanently. Two complete production environments, **blue** and **green**, run side by side at all times. One is live and serving all user traffic. The other is idle, ready to receive the next release.
 
-When a new version is ready:
+When a new version is ready, the CI/CD pipeline:
 
-1. The CI/CD pipeline detects which environment is currently idle
-2. It builds a fresh Docker image and pushes it to Amazon ECR
-3. It deploys the new version to the idle environment
-4. It waits for Kubernetes readiness probes to pass
-5. It runs an explicit health check against the `/health` endpoint
-6. It patches the Kubernetes Service selector from `version: blue` to `version: green`
+1. Detects which environment is currently idle
+2. Builds a fresh Docker image and pushes it to Amazon ECR
+3. Deploys the new version to the idle environment
+4. Waits for Kubernetes readiness probes to pass
+5. Runs an explicit health check against the `/health` endpoint
+6. Patches the Kubernetes Service selector to switch all traffic instantly
+7. Prometheus captures the switch in real-time metrics visible in Grafana
 
 That selector patch is the entire traffic switch. It takes under one second. Users never experience a failed request. The previously live environment stays running as an instant rollback target.
 
@@ -54,37 +56,49 @@ That selector patch is the entire traffic switch. It takes under one second. Use
 
 ## Live Proof
 
-All screenshots below were captured during a live deployment on a real AWS EKS cluster.
+All screenshots below were captured during a live deployment on a real AWS EKS cluster provisioned with Terraform.
 
-### Blue environment live in browser (v1.0.0)
-![Blue Environment](docs/screenshots/blue.jpg)
+### Blue environment live (v1.0.0)
+![Blue Environment](docs/screenshots/01_blue_environment.jpg)
 
-### Green environment live in browser (v2.0.0)
-![Green Environment](docs/screenshots/green.jpg)
+### Green environment live (v2.0.0)
+![Green Environment](docs/screenshots/02_green_environment.jpg)
 
 ### All 4 pods running simultaneously
-![4 Pods Running](docs/screenshots/4_pods_running.jpg)
+![4 Pods Running](docs/screenshots/03_four_pods_running.jpg)
 
-### EKS cluster nodes
-![Cluster Nodes](docs/screenshots/cluster_nodes.jpg)
+### EKS cluster nodes (Kubernetes v1.31)
+![Cluster Nodes](docs/screenshots/14_terraform_cluster_nodes.jpg)
 
 ### NGINX Ingress with public AWS ELB URL
-![Ingress URL](docs/screenshots/ingress_with_the_live_URL.jpg)
+![Ingress URL](docs/screenshots/05_ingress_live_url.jpg)
 
 ### Service selector showing live environment
-![Service Selector](docs/screenshots/service_selector.jpg)
+![Service Selector](docs/screenshots/06_service_selector_switch.jpg)
 
-### Terminal 1: continuous health check loop during the switch
-![Curl Loop](docs/screenshots/Terminal_1_curl_loop.jpg)
+### Terminal showing the traffic switch command
+![Traffic Switch](docs/screenshots/20_traffic_switch_and_pods.jpg)
 
-### Terminal 2: the traffic switch command
-![Traffic Switch](docs/screenshots/Terminal_2_switch.jpg)
+### Curl loop showing zero-downtime green responses
+![Curl Loop Green](docs/screenshots/21_curl_loop_green_healthy.jpg)
 
-### GitHub Actions pipeline passing all steps
-![GitHub Actions List](docs/screenshots/GitHub_Actions_list.jpg)
+### GitHub Actions pipeline passing all steps in 29 seconds
+![GitHub Actions](docs/screenshots/09_github_actions_pipeline.jpg)
 
-### Every step green in 29 seconds
-![GitHub Actions Steps](docs/screenshots/GitHub_Actions_steps.jpg)
+### Every step green
+![GitHub Actions Steps](docs/screenshots/10_github_actions_steps_green.jpg)
+
+### Terraform state list showing all 17 managed resources
+![Terraform State](docs/screenshots/13_terraform_state_list.jpg)
+
+### Terraform infrastructure files
+![Terraform Files](docs/screenshots/11_terraform_files.jpg)
+
+### Grafana live HTTP request rates by environment
+![Grafana Metrics](docs/screenshots/22_grafana_live_http_metrics.jpg)
+
+### The traffic switch captured in Grafana: blue dropping, green rising
+![Grafana Switch](docs/screenshots/23_grafana_traffic_switch_live.jpg)
 
 ---
 
@@ -104,22 +118,24 @@ GitHub Actions Pipeline (29 seconds average)
     +-- Build Docker image and push to ECR
     +-- Deploy to idle environment (kubectl apply + rollout wait)
     +-- Health check idle pods (/health endpoint)
-    +-- Patch Service selector  <-- this is the traffic switch
+    +-- Patch Service selector  <-- the traffic switch
     |
     v
-Amazon EKS Cluster
+Amazon EKS Cluster (Terraform-provisioned)
     |
     +-- NGINX Ingress Controller (AWS ELB public URL)
-            |
-            v
-    Kubernetes Service
-    selector: version=blue  OR  version=green
+    |
+    +-- Prometheus (scrapes /metrics from app pods every 15s)
+    |
+    +-- Grafana (real-time dashboards showing request rates per environment)
+    |
+    +-- Kubernetes Service (selector: version=blue OR version=green)
             |
             +-- Blue Deployment  (2 replicas, v1.0.0)
             +-- Green Deployment (2 replicas, v2.0.0)
 ```
 
-The public URL never changes. The NGINX Ingress forwards to the Service. The Service routes to whichever environment its selector points at. Changing that selector is the entire mechanism.
+The public URL never changes. Prometheus scrapes both environments simultaneously. Changing the Service selector moves all traffic while Grafana captures the transition in real-time metrics.
 
 ---
 
@@ -127,13 +143,16 @@ The public URL never changes. The NGINX Ingress forwards to the Service. The Ser
 
 | Layer | Technology | Purpose |
 |---|---|---|
-| Application | Node.js 20 + Express | Web server with `/health` endpoint and visible version banner |
-| Container | Docker (multi-stage build) | Minimal, non-root production image |
-| Orchestration | Kubernetes on AWS EKS | Manages blue and green deployments, probes, and scaling |
+| Application | Node.js 20 + Express | Web server with `/health` and `/metrics` endpoints |
+| Container | Docker (multi-stage, non-root) | Minimal production image |
+| Orchestration | Kubernetes on AWS EKS 1.31 | Manages deployments, probes, and traffic routing |
 | Registry | Amazon ECR | Private container image storage |
 | Ingress | NGINX Ingress Controller | Single public entry point via AWS ELB |
-| CI/CD | GitHub Actions | Fully automated build, deploy, verify, and switch pipeline |
-| Cloud | Amazon Web Services | EKS, ECR, IAM, EC2 node groups |
+| CI/CD | GitHub Actions | Automated build, deploy, verify, and switch pipeline |
+| Infrastructure | Terraform | All AWS resources defined as code |
+| Metrics | Prometheus + prom-client | HTTP request rates, error rates, environment info |
+| Dashboards | Grafana | Real-time visualisation of the traffic switch |
+| Cloud | Amazon Web Services | EKS, ECR, VPC, IAM, EC2 node groups |
 
 ---
 
@@ -142,40 +161,44 @@ The public URL never changes. The NGINX Ingress forwards to the Service. The Ser
 ```
 .
 +-- app/
-|   +-- server.js            Express app with /health endpoint and version banner
-|   +-- package.json         Node.js dependencies
-|   +-- Dockerfile           Multi-stage, non-root production image
+|   +-- server.js          Express app with /health and /metrics endpoints
+|   +-- package.json       Node.js dependencies including prom-client
+|   +-- Dockerfile         Multi-stage, non-root production image
 +-- k8s/
-|   +-- deployment-blue.yaml    Blue environment Deployment (v1.0.0)
-|   +-- deployment-green.yaml   Green environment Deployment (v2.0.0)
+|   +-- deployment-blue.yaml    Blue Deployment (v1.0.0, imagePullPolicy: Always)
+|   +-- deployment-green.yaml   Green Deployment (v2.0.0, imagePullPolicy: Always)
 |   +-- service.yaml            ClusterIP Service (the traffic switch)
 |   +-- ingress.yaml            NGINX Ingress (public ELB URL)
+|   +-- servicemonitor.yaml     Tells Prometheus to scrape /metrics from app pods
++-- terraform/
+|   +-- main.tf            VPC, EKS cluster, ECR repo, IAM roles, subnets
+|   +-- variables.tf       All configurable values in one place
+|   +-- outputs.tf         Cluster endpoint, ECR URL, kubectl connect command
+|   +-- terraform.tfvars   Actual values (region, instance type, node count)
 +-- .github/
 |   +-- workflows/
-|       +-- deploy.yml       Full CI/CD pipeline (triggers on push to main)
-|       +-- rollback.yml     One-click rollback via GitHub Actions UI
+|       +-- deploy.yml     Full CI/CD pipeline (triggers on push to main)
+|       +-- rollback.yml   One-click rollback via GitHub Actions UI
 +-- docs/
-|   +-- screenshots/         Live proof from the deployed cluster
+|   +-- screenshots/       23 screenshots from the live deployment
 +-- README.md
 ```
 
 ---
 
-## How it Works
+## How It Works
 
 ### The Traffic Switch
 
-The entire blue-green mechanism lives in a single field inside `k8s/service.yaml`:
+The entire blue-green mechanism lives in one field inside `k8s/service.yaml`:
 
 ```yaml
 selector:
   app: bluegreen-app
-  version: blue   # change this to "green" to move all traffic instantly
+  version: blue   # change to "green" to move all traffic instantly
 ```
 
-Kubernetes routes traffic only to pods that match this selector. Changing it from `blue` to `green` moves 100% of traffic to the green environment in milliseconds. No restarts, no downtime, no dropped requests.
-
-The CI/CD pipeline does this automatically with:
+The CI/CD pipeline patches this automatically:
 
 ```bash
 kubectl patch service bluegreen-service \
@@ -184,7 +207,7 @@ kubectl patch service bluegreen-service \
 
 ### Dynamic Idle Detection
 
-The pipeline never hard-codes which environment to deploy to. It reads the current live state and computes the answer:
+The pipeline never hard-codes which environment to deploy to:
 
 ```bash
 LIVE=$(kubectl get service bluegreen-service \
@@ -195,15 +218,19 @@ if [ "$LIVE" = "blue" ]; then IDLE="green"; else IDLE="blue"; fi
 
 Run the pipeline a hundred times and it always deploys to the correct idle environment.
 
-### Two Layers of Health Verification
+### Real-Time Metrics
 
-Traffic only switches after two independent checks pass:
+The application exposes a `/metrics` endpoint using `prom-client`:
 
-1. **Kubernetes readiness probes** gate the rollout. Pods are not marked Ready until `/health` returns 200. The pipeline waits for the full rollout before proceeding.
+```javascript
+const httpRequests = new client.Counter({
+  name: "http_requests_total",
+  help: "Total HTTP requests by route, status, color and version",
+  labelNames: ["method", "route", "status", "color", "version"],
+});
+```
 
-2. **Explicit pipeline health check** runs `wget` directly inside an idle pod against `localhost:3000/health`. This bypasses the Service and Ingress entirely, giving a clean signal that the pod itself is healthy before any user traffic touches it.
-
-If either check fails, the pipeline stops. The live environment is untouched.
+A Kubernetes ServiceMonitor tells Prometheus to scrape this endpoint every 15 seconds. Grafana queries the resulting data to show request rates per environment in real time. During a traffic switch, the blue line drops and the green line rises on the dashboard simultaneously.
 
 ---
 
@@ -214,6 +241,18 @@ If either check fails, the pipeline stops. The live environment is untouched.
 curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
 sudo apt install unzip -y && unzip awscliv2.zip && sudo ./aws/install
 aws --version
+```
+
+**Terraform**
+```bash
+sudo apt update && sudo apt install -y gnupg software-properties-common
+wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor | \
+  sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
+  https://apt.releases.hashicorp.com $(lsb_release -cs) main" | \
+  sudo tee /etc/apt/sources.list.d/hashicorp.list
+sudo apt update && sudo apt install terraform -y
+terraform version
 ```
 
 **eksctl**
@@ -245,68 +284,68 @@ sudo usermod -aG docker $USER && newgrp docker
 docker --version
 ```
 
+**Node.js 20**
+```bash
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install nodejs -y
+node --version
+```
+
 ---
 
-## One-Time AWS Setup
+## Infrastructure Setup with Terraform
+
+All AWS infrastructure is defined as code. One command provisions everything.
 
 ```bash
-# Configure AWS CLI
-aws configure
-# Enter your Access Key ID, Secret Access Key, region (us-east-1), output (json)
+cd terraform
 
-# Verify connection
-aws sts get-caller-identity
+# Initialise Terraform
+terraform init
 
-# Create ECR repository
-aws ecr create-repository \
-  --repository-name bluegreen-app \
-  --region us-east-1
+# Preview what will be created
+terraform plan
 
-# Create EKS cluster (takes 10 to 15 minutes)
-eksctl create cluster \
-  --name    bluegreen-cluster \
-  --region  us-east-1 \
-  --nodes   2 \
-  --node-type t3.medium
+# Provision all 17 resources (takes 10 to 15 minutes)
+terraform apply
 
-# Verify nodes are Ready
+# Connect kubectl to the new cluster
+aws eks update-kubeconfig --region us-east-1 --name bluegreen-cluster
+
+# Verify both nodes are Ready
 kubectl get nodes
-
-# Attach ECR pull permissions to node IAM role
-ROLE_NAME=$(aws iam list-roles \
-  --query "Roles[?contains(RoleName,'NodeInstanceRole')].RoleName" \
-  --output text)
-
-aws iam attach-role-policy \
-  --role-name  "$ROLE_NAME" \
-  --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
-
-# Install NGINX Ingress Controller
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx && helm repo update
-
-helm install ingress-nginx ingress-nginx/ingress-nginx \
-  --namespace ingress-nginx \
-  --create-namespace
-
-# Wait for the ELB hostname (2 to 3 minutes)
-kubectl get service ingress-nginx-controller --namespace ingress-nginx --watch
 ```
+
+Terraform provisions: VPC, 2 public subnets, internet gateway, route table, EKS cluster, EKS node group (2 x t3.medium), ECR repository with lifecycle policy, EKS cluster IAM role, EKS node IAM role with ECR read access.
 
 ---
 
 ## Initial Deployment
 
 ```bash
-# Log in to ECR
+# Install NGINX Ingress Controller
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx && helm repo update
+helm install ingress-nginx ingress-nginx/ingress-nginx \
+  --namespace ingress-nginx --create-namespace
+
+# Install Prometheus and Grafana
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts && helm repo update
+helm install monitoring prometheus-community/kube-prometheus-stack \
+  --namespace monitoring --create-namespace \
+  --set grafana.adminPassword=admin123 \
+  --set prometheus.prometheusSpec.scrapeInterval=15s
+
+# Log in to ECR and push images
 aws ecr get-login-password --region us-east-1 \
   | docker login --username AWS --password-stdin \
     677276115158.dkr.ecr.us-east-1.amazonaws.com
 
-# Build and push both images
-docker build -t 677276115158.dkr.ecr.us-east-1.amazonaws.com/bluegreen-app:blue ./app
+docker build --no-cache \
+  -t 677276115158.dkr.ecr.us-east-1.amazonaws.com/bluegreen-app:blue ./app
 docker push 677276115158.dkr.ecr.us-east-1.amazonaws.com/bluegreen-app:blue
 
-docker build -t 677276115158.dkr.ecr.us-east-1.amazonaws.com/bluegreen-app:green ./app
+docker build --no-cache \
+  -t 677276115158.dkr.ecr.us-east-1.amazonaws.com/bluegreen-app:green ./app
 docker push 677276115158.dkr.ecr.us-east-1.amazonaws.com/bluegreen-app:green
 
 # Apply all Kubernetes manifests
@@ -314,17 +353,48 @@ kubectl apply -f k8s/deployment-blue.yaml
 kubectl apply -f k8s/deployment-green.yaml
 kubectl apply -f k8s/service.yaml
 kubectl apply -f k8s/ingress.yaml
+kubectl apply -f k8s/servicemonitor.yaml
 
-# Verify all 4 pods are running
-kubectl get pods -l app=bluegreen-app
-
-# Get the public URL
+# Get the public URL (AWS uses a hostname, not an IP)
 export INGRESS_HOST=$(kubectl get ingress bluegreen-ingress \
   -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 
 curl http://$INGRESS_HOST/health
 # Expected: {"status":"healthy","color":"blue","version":"v1.0.0"}
 ```
+
+---
+
+## Prometheus and Grafana Monitoring
+
+### Access Grafana
+
+```bash
+kubectl port-forward service/monitoring-grafana 3000:80 --namespace monitoring
+```
+
+Open `http://localhost:3000`. Login: `admin` / `admin123`.
+
+### View the Blue-Green Traffic Dashboard
+
+Import dashboard ID `15757` for the full Kubernetes cluster view, or use the custom Blue-Green Traffic Monitor dashboard which shows HTTP request rates per environment using this PromQL query:
+
+```
+rate(http_requests_total{color="blue"}[1m])
+rate(http_requests_total{color="green"}[1m])
+```
+
+### What Grafana Shows During a Traffic Switch
+
+When the Service selector is patched from blue to green, Grafana shows the blue request rate dropping to zero and the green request rate climbing up in real time. The crossover is visible on the same graph at the exact moment of the switch.
+
+### Access Prometheus
+
+```bash
+kubectl port-forward service/monitoring-kube-prometheus-prometheus 9090:9090 --namespace monitoring
+```
+
+Open `http://localhost:9090/targets` to verify all scrape targets are UP including the bluegreen-app pods.
 
 ---
 
@@ -338,7 +408,7 @@ Add these three secrets to your repository under Settings, then Secrets and vari
 | `AWS_SECRET_ACCESS_KEY` | Your IAM user secret access key |
 | `AWS_REGION` | `us-east-1` |
 
-Every push to `main` triggers the full pipeline automatically. The pipeline detects the idle environment, builds and pushes a new image, deploys it, verifies health, and switches traffic. Average runtime is 29 seconds.
+Every push to `main` triggers the full pipeline automatically. Average runtime is 29 seconds.
 
 ---
 
@@ -354,33 +424,28 @@ while true; do
 done
 ```
 
-While the loop runs, trigger the pipeline with a push or switch manually in Terminal 2:
+Switch traffic in Terminal 2:
 
 ```bash
 kubectl patch service bluegreen-service \
   -p '{"spec":{"selector":{"app":"bluegreen-app","version":"green"}}}'
 ```
 
-Watch Terminal 1. The `color` field changes from `blue` to `green` mid-stream. The `status` field never returns anything other than `healthy`. Every request succeeds throughout the switch.
+Watch Terminal 1. The `color` field changes from `blue` to `green`. The `status` field never returns anything other than `healthy`. Watch Grafana simultaneously to see the request rate crossover on the dashboard.
 
 ---
 
 ## Rollback
 
-**Option A: GitHub Actions UI (recommended)**
+**Option A: GitHub Actions UI**
 
-Go to Actions, select the Rollback workflow, click Run workflow, choose `blue` or `green`, confirm. Done in under 5 seconds.
+Go to Actions, select the Rollback workflow, click Run workflow, choose the target environment, confirm. Done in under 5 seconds.
 
 **Option B: Command line**
 
 ```bash
-# Roll back to blue
 kubectl patch service bluegreen-service \
   -p '{"spec":{"selector":{"app":"bluegreen-app","version":"blue"}}}'
-
-# Confirm the active environment
-kubectl get service bluegreen-service \
-  -o jsonpath='{.spec.selector.version}'
 ```
 
 ---
@@ -389,43 +454,42 @@ kubectl get service bluegreen-service \
 
 ### Challenge 1: AWS ELB gives a hostname, not an IP address
 
-On Azure, the Ingress EXTERNAL-IP is a plain IP address. On AWS, it is a long ELB hostname. The standard `jsonpath='{.status.loadBalancer.ingress[0].ip}'` returns empty on AWS.
+Standard `jsonpath='{.status.loadBalancer.ingress[0].ip}'` returns empty on AWS.
 
-**Solution:** Use `.hostname` instead of `.ip` for the jsonpath query:
+**Solution:** Use `.hostname` instead:
 ```bash
 kubectl get ingress bluegreen-ingress \
   -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
 ```
-Store it as `INGRESS_HOST` rather than `INGRESS_IP` to avoid confusion.
-
----
 
 ### Challenge 2: EKS nodes could not pull images from ECR
 
-After deploying the manifests, pods were stuck in `ImagePullBackOff`. The cluster had no permission to access the private ECR registry.
+Pods hit `ImagePullBackOff` immediately after deployment.
 
-**Solution:** Attach the `AmazonEC2ContainerRegistryReadOnly` IAM policy directly to the EKS node instance role. This grants all nodes in the cluster pull access to ECR without hard-coding credentials anywhere:
+**Solution:** Terraform attaches `AmazonEC2ContainerRegistryReadOnly` to the node IAM role automatically. No manual steps needed.
+
+### Challenge 3: Terraform could not destroy the VPC after cluster deletion
+
+NGINX Ingress creates an AWS load balancer outside Terraform's knowledge. That load balancer holds the subnets and internet gateway hostage.
+
+**Solution:** Delete the load balancer and its security group manually before running `terraform destroy`:
 ```bash
-aws iam attach-role-policy \
-  --role-name  "$ROLE_NAME" \
-  --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+aws elb delete-load-balancer --region us-east-1 --load-balancer-name <name>
+aws ec2 delete-security-group --region us-east-1 --group-id <sg-id>
+terraform destroy -auto-approve
 ```
 
----
+### Challenge 4: imagePullPolicy caused stale images
 
-### Challenge 3: The GitHub Actions workflow files were never pushed
+After rebuilding and pushing a new image with the same tag, pods continued running the old image because Kubernetes cached it.
 
-The pipeline ran successfully when triggered, but the Actions tab showed the "Get started" page instead of workflow runs. The `.github/workflows/` folder existed locally but was empty because the workflow files had been created in a downloaded ZIP rather than on the Ubuntu machine directly.
+**Solution:** Add `imagePullPolicy: Always` to both deployment manifests so every pod restart pulls the latest image from ECR.
 
-**Solution:** Create the workflow files directly on the Ubuntu machine using `cat` heredocs and push them explicitly with `git add .github/`. Confirmed by checking `ls -la .github/workflows/` before committing.
+### Challenge 5: The metrics endpoint returned 404 in early deployments
 
----
+The `/metrics` route existed in the code but pods served the old image without it.
 
-### Challenge 4: Timing the health check gate correctly
-
-Early runs of the pipeline switched traffic before the idle pods were fully ready, causing a brief period where some requests hit pods that had not finished starting up.
-
-**Solution:** Two-stage verification: first `kubectl rollout status` waits for all pods to pass their readiness probes, then an explicit `kubectl exec` health check runs a direct request inside one idle pod. Traffic only switches after both pass independently.
+**Solution:** Build images with `--no-cache`, add `imagePullPolicy: Always` to manifests, and always test the metrics endpoint directly inside a pod with `kubectl exec` before relying on it.
 
 ---
 
@@ -435,38 +499,46 @@ Early runs of the pipeline switched traffic before the idle pods were fully read
 |---|---|---|
 | `AWS_ACCESS_KEY_ID` | Yes | IAM user access key |
 | `AWS_SECRET_ACCESS_KEY` | Yes | IAM user secret key |
-| `AWS_REGION` | Yes | AWS region (e.g. `us-east-1`) |
+| `AWS_REGION` | Yes | `us-east-1` |
 
-The IAM user needs these policies:
-- `AmazonEKSClusterPolicy`
-- `AmazonEC2ContainerRegistryPowerUser`
-- `AmazonEKSWorkerNodePolicy`
+IAM policies needed: `AmazonEKSClusterPolicy`, `AmazonEC2ContainerRegistryPowerUser`, `AmazonEKSWorkerNodePolicy`.
 
 ---
 
 ## Tear Down
 
-Delete all resources when finished to avoid ongoing charges. The EKS control plane costs approximately $0.10 per hour.
+**Important:** Delete the NGINX load balancer before running terraform destroy or the VPC deletion will fail.
 
 ```bash
-eksctl delete cluster --name bluegreen-cluster --region us-east-1
+# Find and delete the load balancer created by NGINX Ingress
+LB_NAME=$(aws elb describe-load-balancers --region us-east-1 \
+  --query "LoadBalancerDescriptions[*].LoadBalancerName" --output text)
+aws elb delete-load-balancer --region us-east-1 --load-balancer-name $LB_NAME
 
+# Wait 30 seconds then destroy all Terraform resources
+sleep 30
+cd terraform
+terraform destroy -auto-approve
+
+# Delete the ECR repository
 aws ecr delete-repository \
   --repository-name bluegreen-app \
   --region us-east-1 \
   --force
 ```
 
+The EKS control plane costs approximately $0.10 per hour. Always tear down after demonstrating the project.
+
 ---
 
-## Project Type and Purpose
-
-This is a DevOps infrastructure project. The web application (Node.js/Express) is intentionally minimal because the focus is entirely on the deployment strategy. The visible color and version banner exist to make the traffic switch observable and demonstrable during a live presentation.
-
-**Project objectives:**
+## Project Objectives
 
 - Achieve zero-downtime application releases using a blue-green deployment strategy on Kubernetes
 - Enable sub-5-second rollback by keeping both environments live at all times
 - Fully automate the build, push, deploy, verify, and traffic-switch process with GitHub Actions
-- Demonstrate production-grade container orchestration on AWS EKS
+- Manage all AWS infrastructure as code using Terraform for reproducibility
+- Demonstrate production-grade observability with Prometheus metrics and Grafana dashboards
 - Apply security best practices including non-root containers, resource limits, and scoped IAM policies
+
+---
+`Docker` `Kubernetes` `GitHub Actions` `AWS EKS` `Terraform` `Prometheus` `Grafana` `NGINX` `Node.js`
